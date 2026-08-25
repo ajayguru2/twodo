@@ -18,6 +18,12 @@ then get back to work.
 ## Install
 
 ```sh
+brew install ajayguru2/tap/twodo
+```
+
+Or from source:
+
+```sh
 cargo build --release
 cp target/release/twodo ~/.local/bin/     # or anywhere on PATH
 ```
