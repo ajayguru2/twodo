@@ -18,6 +18,15 @@ then get back to work.
 ## Install
 
 ```sh
+brew tap ajayguru2/tap
+brew trust ajayguru2/tap
+brew install twodo
+```
+
+Homebrew will not load formulae from an untrusted third-party tap, so the
+`brew trust` step is required. To skip it, install by full name instead:
+
+```sh
 brew install ajayguru2/tap/twodo
 ```
 
