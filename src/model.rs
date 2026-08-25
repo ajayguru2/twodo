@@ -10,23 +10,6 @@ pub enum Status {
     Done,
 }
 
-impl Status {
-    pub fn glyph(&self) -> &'static str {
-        match self {
-            Status::Todo => "○",
-            Status::Doing => "◐",
-            Status::Done => "●",
-        }
-    }
-    pub fn next(&self) -> Status {
-        match self {
-            Status::Todo => Status::Doing,
-            Status::Doing => Status::Done,
-            Status::Done => Status::Todo,
-        }
-    }
-}
-
 /// A span during which a task was actively being worked on.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Window {
@@ -46,17 +29,6 @@ pub struct Task {
     pub notes: String,
     #[serde(default)]
     pub windows: Vec<Window>,
-}
-
-impl Task {
-    /// Total wall time spent in Doing, including a currently open window.
-    pub fn active_secs(&self, now: DateTime<Utc>) -> i64 {
-        self.windows
-            .iter()
-            .map(|w| (w.end.unwrap_or(now) - w.start).num_seconds().max(0))
-            .sum()
-    }
-
 }
 
 #[derive(Serialize, Deserialize, Default)]

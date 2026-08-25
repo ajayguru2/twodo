@@ -2,7 +2,7 @@
 name = "twodo"
 version = "0.1.0"
 edition = "2021"
-description = "Blazing fast TUI task manager + notes for devs"
+description = "A quiet terminal todo list with one note per task"
 
 [dependencies]
 ratatui = "0.29"

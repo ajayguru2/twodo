@@ -1,17 +1,19 @@
 # twodo
 
-A blazing fast TUI task manager and note taker for devs.
+A quiet todo list for developers, right in the terminal.
 
-```
-┌ tasks · twodo ───────────────┐┌ notes ────────────────────────────┐
-│▌◐ Wire up the scanner     42m││ Codex rollout logs put cwd in     │
-│ ○ Add sqlite backend         ││ session_meta, not per-line.       │
-│ ● Ship v0.1                  ││                                   │
-└──────────────────────────────┘└───────────────────────────────────┘
-```
+Every task has one free-form note. Open a task, write down the context you need,
+then get back to work.
 
-Marking a task `◐ Doing` starts its clock; moving it off stops it. The task
-list shows the total time spent on each task.
+```text
+  twodo / compiler                                      2 open
+  ────────────────────────────────────────────────────────────
+  01  ○  Reproduce the parser crash
+  02  ○  Add the missing span
+  03  ✓  Write the regression test
+
+  enter open   n new   space done   e rename   d delete   q quit
+```
 
 ## Install
 
@@ -29,18 +31,19 @@ twodo ~/some/repo  # tasks for another project
 
 ## Keys
 
-| key | action | key | action |
-|---|---|---|---|
-| `j` `k` `↓` `↑` | move | `a` | add task |
-| `space` | cycle status | `e` | rename task |
-| `1` `2` `3` | todo / doing / done | `i` `enter` | edit notes |
-| `tab` `shift-tab` | cycle panes | `esc` | back / save |
-| `/` | search titles + notes | `d` `d` | delete task |
-| `p` | toggle all projects | | |
-| `g` `G` | top / bottom | `?` | help |
-| `q` | quit | | |
+| key | action |
+|---|---|
+| `j` `k` `↓` `↑` | move through tasks |
+| `enter` or `i` | open the selected task's note |
+| `n` or `a` | add a task |
+| `e` | rename a task |
+| `space` | mark a task done or open |
+| `d` `d` | delete a task |
+| `esc` | save the note and return to tasks |
+| arrows, `home`, `end` | move through a note |
+| `q` | quit |
 
 ## Storage
 
-Plain JSON at `~/Library/Application Support/twodo/store.json` (macOS) or
-`~/.local/share/twodo/store.json` (Linux). Writes are atomic.
+Tasks are plain JSON at `~/Library/Application Support/twodo/store.json` on
+macOS or `~/.local/share/twodo/store.json` on Linux. Writes are atomic.
