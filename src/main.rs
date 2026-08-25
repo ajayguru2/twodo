@@ -1,7 +1,5 @@
 mod app;
-mod herdr;
 mod model;
-mod scan;
 mod ui;
 
 use anyhow::Result;
@@ -18,12 +16,8 @@ fn main() -> Result<()> {
     let mut store = Store::load()?;
     store.close_stale_windows();
 
-    let arg = std::env::args().nth(1);
-    if arg.as_deref() == Some("--scan") {
-        return debug_scan();
-    }
-
-    let project = arg
+    let project = std::env::args()
+        .nth(1)
         .map(std::path::PathBuf::from)
         .unwrap_or(std::env::current_dir()?);
     let project = std::fs::canonicalize(&project)
@@ -32,8 +26,6 @@ fn main() -> Result<()> {
         .to_string();
 
     let mut app = App::new(store, project);
-    app.start_scan();
-    app.start_herdr_watch();
 
     std::io::stdout().execute(EnterAlternateScreen)?;
     enable_raw_mode()?;
@@ -50,59 +42,11 @@ fn main() -> Result<()> {
     res
 }
 
-/// `twodo --scan` — prints what the session scanner sees, without the TUI.
-fn debug_scan() -> Result<()> {
-    let t0 = std::time::Instant::now();
-    let runs = scan::scan_all(None)?;
-    let (mut c, mut x, mut sub) = (0, 0, 0);
-    for r in &runs {
-        if r.is_sub {
-            sub += 1;
-        }
-        if r.source == "claude" {
-            c += 1;
-        } else {
-            x += 1;
-        }
-    }
-    println!(
-        "{} runs in {:?}  (claude {}, codex {}, subagents {})",
-        runs.len(),
-        t0.elapsed(),
-        c,
-        x,
-        sub
-    );
-    let mut by_cwd: std::collections::HashMap<&str, u32> = Default::default();
-    for r in &runs {
-        *by_cwd.entry(r.cwd.as_str()).or_default() += 1;
-    }
-    let mut v: Vec<_> = by_cwd.into_iter().collect();
-    v.sort_by(|a, b| b.1.cmp(&a.1));
-    println!("\ntop projects:");
-    for (cwd, n) in v.into_iter().take(8) {
-        println!("  {:>5}  {}", n, cwd);
-    }
-    let mut kinds: std::collections::HashMap<String, u32> = Default::default();
-    for r in runs.iter().filter(|r| r.is_sub) {
-        *kinds.entry(format!("{}:{}", r.source, r.kind)).or_default() += 1;
-    }
-    let mut k: Vec<_> = kinds.into_iter().collect();
-    k.sort_by(|a, b| b.1.cmp(&a.1));
-    println!("\nsubagents by kind:");
-    for (kind, n) in k.into_iter().take(10) {
-        println!("  {:>5}  {}", n, kind);
-    }
-    Ok(())
-}
-
 fn run<B: ratatui::backend::Backend>(
     term: &mut ratatui::Terminal<B>,
     app: &mut App,
 ) -> Result<()> {
     loop {
-        app.poll_scan();
-        app.poll_herdr();
         term.draw(|f| ui::draw(f, app))?;
         if !event::poll(Duration::from_millis(200))? {
             continue;
@@ -138,31 +82,6 @@ fn handle(app: &mut App, code: KeyCode) {
             }
             _ => app.mode = Mode::Normal,
         },
-        Mode::AgentDetail => match code {
-            KeyCode::Char('y') => copy_log_path(app),
-            KeyCode::Char('j') | KeyCode::Down => app.move_agent_sel(1),
-            KeyCode::Char('k') | KeyCode::Up => app.move_agent_sel(-1),
-            _ => app.mode = Mode::Normal,
-        },
-        Mode::PickKind => match code {
-            KeyCode::Esc => app.mode = Mode::Normal,
-            KeyCode::Char('j') | KeyCode::Down => {
-                app.kind_sel = (app.kind_sel + 1) % herdr::KINDS.len()
-            }
-            KeyCode::Char('k') | KeyCode::Up => {
-                app.kind_sel = (app.kind_sel + herdr::KINDS.len() - 1) % herdr::KINDS.len()
-            }
-            KeyCode::Enter => {
-                let kind = herdr::KINDS[app.kind_sel].to_string();
-                app.mode = Mode::Normal;
-                // Relaunching with a different kind needs a fresh tab.
-                if let Some(i) = app.sel_task() {
-                    app.store.tasks[i].herdr = None;
-                }
-                app.launch_or_focus(&kind);
-            }
-            _ => {}
-        },
         Mode::AddTask | Mode::EditTitle => text_prompt(app, code),
         Mode::Search => match code {
             KeyCode::Esc | KeyCode::Enter => {
@@ -188,23 +107,15 @@ fn normal(app: &mut App, code: KeyCode) {
         KeyCode::Char('q') => app.quit = true,
         KeyCode::Char('?') => app.mode = Mode::Help,
         KeyCode::Char('j') | KeyCode::Down => {
-            if app.focus == Focus::Agents {
-                app.move_agent_sel(1);
-            } else {
-                let n = app.visible().len();
-                if n > 0 {
-                    app.sel = (app.sel + 1) % n;
-                }
+            let n = app.visible().len();
+            if n > 0 {
+                app.sel = (app.sel + 1) % n;
             }
         }
         KeyCode::Char('k') | KeyCode::Up => {
-            if app.focus == Focus::Agents {
-                app.move_agent_sel(-1);
-            } else {
-                let n = app.visible().len();
-                if n > 0 {
-                    app.sel = (app.sel + n - 1) % n;
-                }
+            let n = app.visible().len();
+            if n > 0 {
+                app.sel = (app.sel + n - 1) % n;
             }
         }
         KeyCode::Char('g') => app.sel = 0,
@@ -223,11 +134,6 @@ fn normal(app: &mut App, code: KeyCode) {
                 app.mode = Mode::EditTitle;
             }
         }
-        KeyCode::Enter if app.focus == Focus::Agents => {
-            if app.sel_run().is_some() {
-                app.mode = Mode::AgentDetail;
-            }
-        }
         KeyCode::Char('i') | KeyCode::Enter => {
             if let Some(i) = app.sel_task() {
                 app.notes_cursor = app.store.tasks[i].notes.len();
@@ -235,32 +141,7 @@ fn normal(app: &mut App, code: KeyCode) {
                 app.mode = Mode::EditNotes;
             }
         }
-        KeyCode::Char('y') if app.focus == Focus::Agents => copy_log_path(app),
-        // herdr: o opens (or focuses) this task's agent tab, O picks the kind.
-        KeyCode::Char('o') => {
-            let kind = app
-                .sel_task()
-                .and_then(|i| app.store.tasks[i].herdr.as_ref().map(|h| h.kind.clone()))
-                .unwrap_or_else(|| herdr::KINDS[0].to_string());
-            app.launch_or_focus(&kind);
-        }
-        KeyCode::Char('O') => {
-            if app.sel_task().is_some() {
-                app.kind_sel = 0;
-                app.mode = Mode::PickKind;
-            }
-        }
-        KeyCode::Char('x') => app.close_tab(),
-        KeyCode::Char('A') => {
-            app.focus = Focus::Agents;
-            app.agent_sel = 0;
-        }
-        KeyCode::Tab => {
-            app.focus = app.focus.next();
-            if app.focus == Focus::Agents {
-                app.agent_sel = 0;
-            }
-        }
+        KeyCode::Tab => app.focus = app.focus.next(),
         KeyCode::BackTab => app.focus = app.focus.prev(),
         KeyCode::Char('/') => {
             app.mode = Mode::Search;
@@ -276,10 +157,6 @@ fn normal(app: &mut App, code: KeyCode) {
             app.show_all_projects = !app.show_all_projects;
             app.sel = 0;
         }
-        KeyCode::Char('r') => {
-            app.status = "rescanning sessions…".into();
-            app.start_scan();
-        }
         KeyCode::Esc => {
             if !app.search.is_empty() {
                 app.search.clear();
@@ -288,42 +165,6 @@ fn normal(app: &mut App, code: KeyCode) {
         }
         _ => {}
     }
-}
-
-/// Puts the selected run's log file path on the clipboard, so you can go read
-/// the session that burned the tokens.
-fn copy_log_path(app: &mut App) {
-    let Some(path) = app.sel_run().map(|r| r.file.clone()) else {
-        return;
-    };
-    if path.is_empty() {
-        app.status = "no log path for this run".into();
-        return;
-    }
-    let copier = if cfg!(target_os = "macos") {
-        "pbcopy"
-    } else {
-        "xclip"
-    };
-    let ok = std::process::Command::new(copier)
-        .args(if copier == "xclip" {
-            vec!["-selection", "clipboard"]
-        } else {
-            vec![]
-        })
-        .stdin(std::process::Stdio::piped())
-        .spawn()
-        .and_then(|mut c| {
-            use std::io::Write;
-            c.stdin.take().unwrap().write_all(path.as_bytes())?;
-            c.wait()
-        })
-        .is_ok();
-    app.status = if ok {
-        "log path copied".into()
-    } else {
-        format!("copy failed · {}", path)
-    };
 }
 
 fn text_prompt(app: &mut App, code: KeyCode) {
@@ -409,23 +250,6 @@ mod tests {
     use super::*;
     use chrono::{Duration as Dur, Utc};
     use model::Window;
-    use scan::AgentRun;
-
-    fn run_at(cwd: &str, mins_ago: i64, is_sub: bool) -> AgentRun {
-        AgentRun {
-            source: "claude".into(),
-            session_id: "s".into(),
-            kind: if is_sub { "Explore".into() } else { "main".into() },
-            is_sub,
-            cwd: cwd.into(),
-            start: Utc::now() - Dur::minutes(mins_ago),
-            end: Utc::now() - Dur::minutes(mins_ago),
-            tool_calls: 3,
-            input_tokens: 100,
-            output_tokens: 10,
-            file: "/tmp/session.jsonl".into(),
-        }
-    }
 
     fn store_with_windows() -> Store {
         let now = Utc::now();
@@ -433,7 +257,6 @@ mod tests {
         s.add("older".into(), "/proj".into());
         s.add("newer".into(), "/proj".into());
         s.add("other project".into(), "/elsewhere".into());
-        // Overlapping windows: task 1 opened 60m ago, task 2 opened 30m ago.
         s.tasks[0].windows.push(Window { start: now - Dur::minutes(60), end: None });
         s.tasks[1].windows.push(Window { start: now - Dur::minutes(30), end: None });
         s.tasks[2].windows.push(Window { start: now - Dur::minutes(60), end: None });
@@ -441,121 +264,36 @@ mod tests {
     }
 
     #[test]
-    fn overlapping_windows_credit_the_most_recently_started_task() {
-        let s = store_with_windows();
-        let runs = vec![run_at("/proj", 45, false), run_at("/proj", 10, false)];
-        let a = scan::attribute(&s.tasks, &runs);
-        // 45m ago only task 1's window was open; 10m ago both were, newer wins.
-        assert_eq!(a.get(&1).unwrap().sessions, 1);
-        assert_eq!(a.get(&2).unwrap().sessions, 1);
-        let total: u32 = a.values().map(|x| x.total_agents()).sum();
-        assert_eq!(total, 2, "a run must never be double counted");
+    fn doing_opens_a_window_and_leaving_doing_closes_it() {
+        let mut s = Store::default();
+        s.add("t".into(), "/proj".into());
+        s.set_status(0, Status::Doing);
+        assert_eq!(s.tasks[0].windows.len(), 1);
+        s.set_status(0, Status::Doing); // already doing: no second window
+        assert_eq!(s.tasks[0].windows.len(), 1);
+        s.set_status(0, Status::Done);
+        assert!(s.tasks[0].windows[0].end.is_some(), "window must close");
+        let secs = s.tasks[0].active_secs(Utc::now());
+        s.set_status(0, Status::Todo);
+        assert_eq!(s.tasks[0].active_secs(Utc::now()), secs, "closed time is fixed");
     }
 
     #[test]
-    fn a_session_already_running_when_the_window_opens_still_counts() {
-        let s = store_with_windows();
-        // Session started 90m ago, still going. Task 2's window opened 30m ago,
-        // i.e. mid-session — the work since then belongs to it.
-        let mut r = run_at("/proj", 90, false);
-        r.end = Utc::now();
-        let a = scan::attribute(&s.tasks, &[r]);
-        assert_eq!(a.get(&2).unwrap().sessions, 1);
+    fn a_window_left_open_by_a_crash_does_not_accrue_time() {
+        let mut s = store_with_windows();
+        s.tasks[0].status = Status::Todo; // open window, not Doing
+        s.close_stale_windows();
+        assert_eq!(s.tasks[0].active_secs(Utc::now()), 0);
     }
 
     #[test]
-    fn activity_outside_the_project_or_window_is_ignored() {
-        let s = store_with_windows();
-        let runs = vec![
-            run_at("/proj", 999, false),        // before any window opened
-            run_at("/somewhere/else", 10, false), // unrelated project
-        ];
-        assert!(scan::attribute(&s.tasks, &runs).is_empty());
-    }
+    fn ui_renders_tasks_and_tab_cycles_two_panes() {
+        let mut app = App::new(store_with_windows(), "/proj".into());
 
-    #[test]
-    fn subdirectories_count_toward_the_project() {
-        let s = store_with_windows();
-        let runs = vec![run_at("/proj/packages/api", 10, true)];
-        let a = scan::attribute(&s.tasks, &runs);
-        assert_eq!(a.get(&2).unwrap().subagents, 1);
-        assert_eq!(a.get(&2).unwrap().by_kind[0].0, "claude:Explore");
-    }
-
-    #[test]
-    fn herdr_agent_names_satisfy_the_naming_rules() {
-        // herdr: 1-32 chars, lowercase [a-z0-9-_], must start with a letter.
-        for tab in ["w1:t9", "w1:tA", "w1:tD", "w99:tZZZ"] {
-            let n = herdr::agent_name(tab);
-            assert!(!n.is_empty() && n.len() <= 32, "{} -> {} length", tab, n);
-            assert!(n.starts_with(|c: char| c.is_ascii_lowercase()), "{}", n);
-            assert!(
-                n.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'),
-                "{} produced invalid name {}",
-                tab,
-                n
-            );
-        }
-        // The uppercase tab ids are what broke this in practice.
-        assert_eq!(herdr::agent_name("w1:tD"), "twodo-w1-td");
-    }
-
-    #[test]
-    fn tab_reaches_the_agents_pane_and_lists_individual_runs() {
-        let s = store_with_windows();
-        let runs = vec![run_at("/proj", 10, false), run_at("/proj", 5, true)];
-        let mut app = App::new(s, "/proj".into());
-        app.agents = scan::attribute(&app.store.tasks, &runs);
-        app.sel = 1; // the task the runs belong to
-
-        // Tab twice: list -> notes -> agents.
         handle(&mut app, KeyCode::Tab);
+        assert_eq!(app.focus, Focus::Notes);
         handle(&mut app, KeyCode::Tab);
-        assert_eq!(app.focus, Focus::Agents);
-        assert_eq!(app.runs().len(), 2, "both runs should be listed");
-
-        // j moves within the agents pane, not the task list.
-        let task_before = app.sel;
-        handle(&mut app, KeyCode::Char('j'));
-        assert_eq!(app.agent_sel, 1);
-        assert_eq!(app.sel, task_before, "task selection must not move");
-
-        // Newest first, so index 0 is the 5-minutes-ago subagent.
-        app.agent_sel = 0;
-        assert!(app.sel_run().unwrap().is_sub);
-
-        let render = |app: &App| -> String {
-            let mut term =
-                ratatui::Terminal::new(ratatui::backend::TestBackend::new(100, 30)).unwrap();
-            term.draw(|f| ui::draw(f, app)).unwrap();
-            term.backend().buffer().content().iter().map(|c| c.symbol()).collect()
-        };
-
-        // The pane lists each run individually, not just the rolled-up totals.
-        let pane = render(&app);
-        assert!(pane.contains("claude:Explore"), "subagent run should be listed");
-        assert!(pane.contains("claude:main"), "session run should be listed");
-
-        handle(&mut app, KeyCode::Enter);
-        assert_eq!(app.mode, Mode::AgentDetail);
-        let detail = render(&app);
-        assert!(detail.contains("agent run"), "detail popup should be open");
-        assert!(detail.contains("subagent · Explore"), "detail should name the run");
-        // Path is shown as dir + filename on separate lines so it never wraps.
-        assert!(detail.contains("/tmp/"), "detail should show the log dir");
-        assert!(detail.contains("session.jsonl"), "detail should show the log file");
-
-        // Any other key dismisses the popup.
-        handle(&mut app, KeyCode::Esc);
-        assert_eq!(app.mode, Mode::Normal);
-    }
-
-    #[test]
-    fn ui_renders_tasks_and_agent_counts() {
-        let s = store_with_windows();
-        let runs = vec![run_at("/proj", 10, false), run_at("/proj", 10, true)];
-        let mut app = App::new(s, "/proj".into());
-        app.agents = scan::attribute(&app.store.tasks, &runs);
+        assert_eq!(app.focus, Focus::List);
 
         let backend = ratatui::backend::TestBackend::new(100, 30);
         let mut term = ratatui::Terminal::new(backend).unwrap();
@@ -564,7 +302,6 @@ mod tests {
 
         assert!(text.contains("older") && text.contains("newer"));
         assert!(!text.contains("other project"), "other projects must be filtered out");
-        assert!(text.contains("⛁2"), "agent badge should show 2 agents");
-        assert!(text.contains("agents"));
+        assert!(text.contains("notes"));
     }
 }

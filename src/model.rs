@@ -27,21 +27,11 @@ impl Status {
     }
 }
 
-/// A span during which a task was actively being worked on. Agent activity in
-/// the task's project during an open or closed window is attributed to it.
+/// A span during which a task was actively being worked on.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Window {
     pub start: DateTime<Utc>,
     pub end: Option<DateTime<Utc>>,
-}
-
-/// The herdr tab a task owns, once one has been launched for it.
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct HerdrTab {
-    pub tab_id: String,
-    pub pane_id: String,
-    pub agent_name: String,
-    pub kind: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -56,8 +46,6 @@ pub struct Task {
     pub notes: String,
     #[serde(default)]
     pub windows: Vec<Window>,
-    #[serde(default)]
-    pub herdr: Option<HerdrTab>,
 }
 
 impl Task {
@@ -69,22 +57,6 @@ impl Task {
             .sum()
     }
 
-    /// If the run spanning `[start, end]` overlaps any of this task's windows,
-    /// returns the start of the latest such window (used to break ties between
-    /// tasks). Overlap rather than containment matters: a session you were
-    /// already inside when you marked the task Doing still did work for it.
-    pub fn overlaps(
-        &self,
-        start: DateTime<Utc>,
-        end: DateTime<Utc>,
-        now: DateTime<Utc>,
-    ) -> Option<DateTime<Utc>> {
-        self.windows
-            .iter()
-            .filter(|w| start <= w.end.unwrap_or(now) && end >= w.start)
-            .map(|w| w.start)
-            .max()
-    }
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -131,12 +103,11 @@ impl Store {
             created: Utc::now(),
             notes: String::new(),
             windows: Vec::new(),
-            herdr: None,
         });
         id
     }
 
-    /// Moves a task to `status`, opening or closing its attribution window.
+    /// Moves a task to `status`, opening or closing its active-time window.
     pub fn set_status(&mut self, idx: usize, status: Status) {
         let now = Utc::now();
         let Some(t) = self.tasks.get_mut(idx) else {
