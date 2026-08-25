@@ -42,6 +42,10 @@ const prevChar = (text: string, cursor: number) =>
 const nextChar = (text: string, cursor: number) =>
   cursor + ([...text.slice(cursor)][0]?.length ?? 0);
 
+/** VSCode word-delete boundary: skip trailing whitespace, then the word. */
+export const wordStart = (text: string, cursor: number) =>
+  text.slice(0, cursor).replace(/\S*\s*$/, "").length;
+
 // ------------------------------------------------------------------ keys ----
 
 export function handle(app: App, k: Key): void {
@@ -61,7 +65,7 @@ export function handle(app: App, k: Key): void {
 }
 
 function normal(app: App, k: Key): void {
-  const n = app.visible().length;
+  const n = app.rows().length;
   const char = k.type === "char" ? k.value : "";
   if (char === "q") app.quit = true;
   else if (char === "j" || k.type === "down") {
@@ -80,7 +84,12 @@ function normal(app: App, k: Key): void {
       app.input = app.store.tasks[i]!.title;
       app.mode = "EditTitle";
     }
+  } else if (char === "l" || k.type === "right") {
+    app.descend();
+  } else if (char === "h" || k.type === "left" || k.type === "esc") {
+    app.ascend();
   } else if (char === "i" || k.type === "enter") {
+    if (app.descend()) return;
     const i = app.selTask();
     if (i !== undefined) {
       app.notesCursor = app.store.tasks[i]!.notes.length;
@@ -99,7 +108,7 @@ function textPrompt(app: App, k: Key): void {
     if (text !== "") {
       if (app.mode === "AddTask") {
         app.store.add(text, app.project);
-        app.sel = Math.max(app.visible().length - 1, 0);
+        app.sel = Math.max(app.rows().length - 1, 0);
       } else {
         const i = app.selTask();
         if (i !== undefined) app.store.tasks[i]!.title = text;
@@ -110,6 +119,10 @@ function textPrompt(app: App, k: Key): void {
     app.mode = "Normal";
   } else if (k.type === "backspace") {
     app.input = app.input.slice(0, prevChar(app.input, app.input.length));
+  } else if (k.type === "kill-line") {
+    app.input = "";
+  } else if (k.type === "kill-word") {
+    app.input = app.input.slice(0, wordStart(app.input, app.input.length));
   } else if (k.type === "char") {
     app.input += k.value;
   }
@@ -150,6 +163,18 @@ function notesEdit(app: App, k: Key): void {
     case "delete":
       if (cur < n.length) task.notes = n.slice(0, cur) + n.slice(nextChar(n, cur));
       return;
+    case "kill-line": {
+      const start = lineStart(n, cur);
+      task.notes = n.slice(0, start) + n.slice(cur);
+      app.notesCursor = start;
+      return;
+    }
+    case "kill-word": {
+      const start = wordStart(n, cur);
+      task.notes = n.slice(0, start) + n.slice(cur);
+      app.notesCursor = start;
+      return;
+    }
     case "left":
       app.notesCursor = prevChar(n, cur);
       return;

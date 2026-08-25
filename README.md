@@ -5,14 +5,19 @@ A quiet todo list for developers, right in the terminal.
 Every task has one free-form note. Open a task, write down the context you need,
 then get back to work.
 
-```text
-  twodo / compiler                                      2 open
-  ────────────────────────────────────────────────────────────
-  01  ○  Reproduce the parser crash
-  02  ○  Add the missing span
-  03  ✓  Write the regression test
+Tasks belong to the directory you created them in. Run twodo in a project and
+you see that project. Run it a level up and you see the projects below it, as a
+tree you walk into.
 
-  enter open   n new   space done   e rename   d delete   q quit
+```text
+  twodo  /  work
+  2 open  ·  1 done
+  ────────────────────────────────────────────────────────────
+  01  ▸  compiler/   3 open · 8 done
+  02  ○  Renew the certificate
+  03  ✓  Write the release notes
+
+  ↑↓ move   enter open   n add   e rename   space done   q quit
 ```
 
 ## Install
@@ -41,16 +46,18 @@ cp twodo ~/.local/bin/                    # or anywhere on PATH
 ## Use
 
 ```sh
-twodo             # tasks for the current directory
-twodo ~/some/repo  # tasks for another project
+twodo              # this directory, and any projects below it
+twodo ~/some/repo  # another project
+twodo ~            # every project you track, as a tree
 ```
 
 ## Keys
 
 | key | action |
 |---|---|
-| `j` `k` `↓` `↑` | move through tasks |
-| `enter` or `i` | open the selected task's note |
+| `j` `k` `↓` `↑` | move through the list |
+| `enter` `l` `→` | open a note, or enter a sub-project |
+| `esc` `h` `←` | go back up to the parent directory |
 | `n` or `a` | add a task |
 | `e` | rename a task |
 | `space` | mark a task done or open |

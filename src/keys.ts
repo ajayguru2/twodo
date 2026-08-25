@@ -1,6 +1,7 @@
 export type Key =
   | { type: "char"; value: string }
   | { type: "enter" | "esc" | "backspace" | "tab" | "delete" | "home" | "end" }
+  | { type: "kill-line" | "kill-word" }
   | { type: "up" | "down" | "left" | "right" }
   | { type: "ctrl-c" };
 
@@ -16,6 +17,8 @@ const ESCAPES: Record<string, Key["type"]> = {
   "[4~": "end",
   "[8~": "end",
   "[3~": "delete",
+  "\x7f": "kill-word", // option+backspace
+  "\b": "kill-word",
   OA: "up",
   OB: "down",
   OC: "right",
@@ -51,6 +54,12 @@ export function parseKeys(data: string): Key[] {
       i += 1;
     } else if (c === "\t") {
       keys.push({ type: "tab" });
+      i += 1;
+    } else if (c === "\x15") {
+      keys.push({ type: "kill-line" }); // ctrl+U / cmd+backspace
+      i += 1;
+    } else if (c === "\x17") {
+      keys.push({ type: "kill-word" }); // ctrl+W
       i += 1;
     } else if (c < " ") {
       i += 1; // other control bytes: ignored, same as the Rust build

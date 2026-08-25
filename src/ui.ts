@@ -143,66 +143,71 @@ export function render(app: App, width: number, height: number): string[] {
 // ----------------------------------------------------------------- index ----
 
 function drawIndex(app: App, w: number, h: number): Line[] {
-  const visible = app.visible();
-  const done = visible.filter((i) => app.store.tasks[i]!.status === "Done").length;
-  const open = visible.length - done;
-  const project = basename(app.project) || app.project;
+  const rows = app.rows();
+  const here = app.counts(app.project);
   const footerH = w >= 72 ? 2 : 3;
   const bodyH = Math.max(h - 3 - footerH, 0);
 
   const lines: Line[] = [
-    [seg("twodo", { fg: T.MAROON, bold: true }), seg(`  /  ${project}`, { fg: T.MUTED })],
+    [seg("twodo", { fg: T.MAROON, bold: true }), seg(`  /  ${app.label()}`, { fg: T.MUTED })],
     [
-      seg(`${open} open`, { fg: T.TEXT }),
+      seg(`${here.open} open`, { fg: T.TEXT }),
       seg("  ·  ", { fg: T.MUTED }),
-      seg(`${done} done`, { fg: T.MINT }),
+      seg(`${here.done} done`, { fg: T.MINT }),
     ],
     border(w, "─", { fg: T.SURFACE }),
   ];
 
-  if (visible.length === 0) {
+  if (rows.length === 0) {
     lines.push(
       [],
       [seg("▌ ", { fg: T.MAROON }), seg("No tasks yet.", { fg: T.TEXT })],
       [seg("  Press ", { fg: T.MUTED }), key("n"), seg(" to add one.", { fg: T.MUTED })],
     );
   } else {
-    const offset = Math.max(0, Math.min(app.sel - bodyH + 1, visible.length - bodyH));
-    for (const row of visible.keys()) {
-      if (row < offset || row >= offset + bodyH) continue;
-      const task = app.store.tasks[visible[row]!]!;
-      const selected = row === app.sel;
-      const [mark, markColor] =
-        task.status === "Done" ? ["✓", T.MINT] : ["○", T.MUTED];
-      const titleStyle: Style =
-        task.status === "Done" ? { fg: T.MUTED, strike: true } : { fg: T.TEXT };
+    const offset = Math.max(0, Math.min(app.sel - bodyH + 1, rows.length - bodyH));
+    rows.forEach((row, i) => {
+      if (i < offset || i >= offset + bodyH) return;
+      const selected = i === app.sel;
       const fill: Style = selected ? { bg: T.SELECTED, bold: true } : { bg: T.INK };
-      lines.push(
-        pad(
-          [
-            seg(selected ? "▌ " : "  ", { fg: T.MAROON, ...fill }),
-            seg(`${String(row + 1).padStart(3)}  `, { fg: T.MUTED, ...fill }),
-            seg(`${mark}  `, { fg: markColor as RGB, ...fill }),
-            seg(task.title, { ...titleStyle, ...fill }),
-          ],
-          w,
-          fill,
-        ),
-      );
-    }
+      const line: Line = [
+        seg(selected ? "▌ " : "  ", { fg: T.MAROON, ...fill }),
+        seg(`${String(i + 1).padStart(3)}  `, { fg: T.MUTED, ...fill }),
+      ];
+      if (row.kind === "dir") {
+        const { open, done } = app.counts(row.path);
+        line.push(
+          seg("▸  ", { fg: T.MAROON, ...fill }),
+          seg(`${basename(row.path)}/`, { fg: T.TEXT, ...fill }),
+          seg(`   ${open} open · ${done} done`, { fg: T.MUTED, ...fill }),
+        );
+      } else {
+        const task = app.store.tasks[row.idx]!;
+        const [mark, markColor] = task.status === "Done" ? ["✓", T.MINT] : ["○", T.MUTED];
+        const titleStyle: Style =
+          task.status === "Done" ? { fg: T.MUTED, strike: true } : { fg: T.TEXT };
+        line.push(
+          seg(`${mark}  `, { fg: markColor as RGB, ...fill }),
+          seg(task.title, { ...titleStyle, ...fill }),
+        );
+      }
+      lines.push(pad(line, w, fill));
+    });
   }
 
   while (lines.length < 3 + bodyH) lines.push([]);
-  return [...lines.slice(0, 3 + bodyH), ...indexFooter(w, footerH)];
+  return [...lines.slice(0, 3 + bodyH), ...indexFooter(w, footerH, app.project !== app.root)];
 }
 
-function indexFooter(w: number, footerH: number): Line[] {
+function indexFooter(w: number, footerH: number, nested: boolean): Line[] {
+  const back: Seg[] = nested ? [key("esc"), label(" up   ")] : [];
   const rows: Line[] =
     w >= 72
       ? [
           [
             key("↑↓"), label(" move   "),
-            key("enter"), label(" note   "),
+            key("enter"), label(" open   "),
+            ...back,
             key("n"), label(" add   "),
             key("e"), label(" rename   "),
             key("space"), label(" done   "),
@@ -213,7 +218,8 @@ function indexFooter(w: number, footerH: number): Line[] {
       : [
           [
             key("↑↓"), label(" move   "),
-            key("enter"), label(" note   "),
+            key("enter"), label(" open   "),
+            ...back,
             key("n"), label(" add   "),
             key("space"), label(" done"),
           ],

@@ -115,6 +115,32 @@ test("raw input is decoded into key events", () => {
   ]);
 });
 
+test("cmd+backspace clears the line and option+backspace clears a word", () => {
+  expect(parseKeys("\x15\x1b\x7f\x17")).toEqual([
+    { type: "kill-line" },
+    { type: "kill-word" },
+    { type: "kill-word" },
+  ]);
+
+  const s = new Store();
+  s.add("t", "/proj");
+  const app = new App(s, "/proj");
+  app.mode = "EditTitle";
+  app.sel = 0;
+  app.input = "fix the parser ";
+  handle(app, { type: "kill-word" });
+  expect(app.input).toBe("fix the ");
+
+  s.tasks[0]!.notes = "line one\nsecond line";
+  app.mode = "EditNotes";
+  app.notesCursor = s.tasks[0]!.notes.length;
+  handle(app, { type: "kill-line" });
+  expect(s.tasks[0]!.notes).toBe("line one\n");
+  handle(app, { type: "kill-word" });
+  expect(s.tasks[0]!.notes).toBe("line ");
+  expect(app.notesCursor).toBe(5);
+});
+
 test("the light theme repaints on a paper background", () => {
   const store = new Store();
   store.add("Fix flaky parser", "/proj");
@@ -126,4 +152,45 @@ test("the light theme repaints on a paper background", () => {
   expect(light).toContain("48;2;253;246;227"); // solarized base3
   expect(dark).toContain("48;2;10;12;19");
   expect(plain(app, 64, 20)).toContain("Fix flaky parser");
+});
+
+test("a parent directory lists sub-projects and descends into them", () => {
+  const store = new Store();
+  store.add("root chore", "/work");
+  store.add("parser bug", "/work/twodo/src");
+  store.add("other", "/elsewhere");
+  const app = new App(store, "/work");
+
+  expect(app.rows()).toEqual([
+    { kind: "dir", path: "/work/twodo" },
+    { kind: "task", idx: 0 },
+  ]);
+  const top = plain(app, 80, 20);
+  expect(top).toContain("twodo/");
+  expect(top).toContain("root chore");
+  expect(top).not.toContain("parser bug"); // nested: shown after descending
+  expect(top).not.toContain("other");
+
+  handle(app, { type: "enter" }); // into /work/twodo
+  expect(app.project).toBe("/work/twodo");
+  handle(app, { type: "enter" }); // into /work/twodo/src
+  expect(app.project).toBe("/work/twodo/src");
+  expect(plain(app, 80, 20)).toContain("parser bug");
+
+  handle(app, { type: "esc" });
+  handle(app, { type: "esc" });
+  expect(app.project).toBe("/work");
+  expect(app.sel).toBe(0); // back on the sub-project we came from
+  handle(app, { type: "esc" }); // already at the root: stays put
+  expect(app.project).toBe("/work");
+});
+
+test("a project folder shows only its own tasks", () => {
+  const store = new Store();
+  store.add("parser bug", "/work/twodo");
+  store.add("root chore", "/work");
+  const app = new App(store, "/work/twodo");
+  expect(app.rows()).toEqual([{ kind: "task", idx: 0 }]);
+  handle(app, { type: "enter" });
+  expect(app.mode).toBe("EditNotes"); // enter on a task still opens the note
 });
