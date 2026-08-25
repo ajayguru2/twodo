@@ -1,0 +1,19 @@
+{
+  "name": "twodo",
+  "version": "0.1.1",
+  "description": "A quiet terminal todo list with one note per task",
+  "license": "MIT",
+  "repository": "https://github.com/ajayguru2/twodo",
+  "type": "module",
+  "bin": { "twodo": "./src/main.ts" },
+  "scripts": {
+    "start": "bun run src/main.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "build": "bun build --compile --minify src/main.ts --outfile twodo"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.7.0"
+  }
+}

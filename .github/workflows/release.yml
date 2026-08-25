@@ -8,25 +8,23 @@ permissions:
 
 jobs:
   build:
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
           - target: aarch64-apple-darwin
-            os: macos-14
+            bun: bun-darwin-arm64
           - target: x86_64-apple-darwin
-            os: macos-14
+            bun: bun-darwin-x64
           - target: x86_64-unknown-linux-musl
-            os: ubuntu-latest
-    runs-on: ${{ matrix.os }}
+            bun: bun-linux-x64-musl
     steps:
       - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.target }}
-      - run: rustup target add ${{ matrix.target }}
-      - run: cargo build --release --target ${{ matrix.target }}
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun build --compile --minify --target=${{ matrix.bun }} src/main.ts --outfile twodo
       - name: Package
-        run: tar -czf "twodo-${{ matrix.target }}.tar.gz" -C "target/${{ matrix.target }}/release" twodo
+        run: tar -czf "twodo-${{ matrix.target }}.tar.gz" twodo
       - uses: actions/upload-artifact@v4
         with:
           name: twodo-${{ matrix.target }}

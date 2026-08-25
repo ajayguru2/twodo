@@ -30,11 +30,12 @@ Homebrew will not load formulae from an untrusted third-party tap, so the
 brew install ajayguru2/tap/twodo
 ```
 
-Or from source:
+Or from source, with [Bun](https://bun.sh):
 
 ```sh
-cargo build --release
-cp target/release/twodo ~/.local/bin/     # or anywhere on PATH
+bun install
+bun run build                             # writes a standalone ./twodo binary
+cp twodo ~/.local/bin/                    # or anywhere on PATH
 ```
 
 ## Use
@@ -57,6 +58,14 @@ twodo ~/some/repo  # tasks for another project
 | `esc` | save the note and return to tasks |
 | arrows, `home`, `end` | move through a note |
 | `q` | quit |
+
+## Develop
+
+```sh
+bun run start     # run it straight from source
+bun test
+bun run typecheck
+```
 
 ## Storage
 
