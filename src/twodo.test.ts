@@ -3,7 +3,7 @@ import { App } from "./app";
 import { parseKeys } from "./keys";
 import { Store } from "./model";
 import { handle, moveVertical } from "./main";
-import { plain } from "./ui";
+import { render, setTheme, plain } from "./ui";
 
 function storeWithWindows(): Store {
   const now = Date.now();
@@ -113,4 +113,17 @@ test("raw input is decoded into key events", () => {
     { type: "delete" },
     { type: "ctrl-c" },
   ]);
+});
+
+test("the light theme repaints on a paper background", () => {
+  const store = new Store();
+  store.add("Fix flaky parser", "/proj");
+  const app = new App(store, "/proj");
+  const dark = render(app, 64, 20).join("");
+  setTheme(true);
+  const light = render(app, 64, 20).join("");
+  setTheme(false);
+  expect(light).toContain("48;2;253;246;227"); // solarized base3
+  expect(dark).toContain("48;2;10;12;19");
+  expect(plain(app, 64, 20)).toContain("Fix flaky parser");
 });

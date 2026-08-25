@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { App, type Mode } from "./app";
 import { parseKeys, type Key } from "./keys";
 import { Store } from "./model";
-import { render } from "./ui";
+import { render, setTheme } from "./ui";
 
 // ------------------------------------------------------------- note edits ---
 
@@ -173,7 +173,33 @@ function notesEdit(app: App, k: Key): void {
 
 // ------------------------------------------------------------------ main ----
 
-function main(): void {
+/**
+ * Asks the terminal for its background colour (OSC 11) and reports whether it
+ * is light. Falls back to dark if the terminal stays quiet.
+ * ponytail: read once at start-up; terminals do not announce theme changes.
+ */
+function detectLightBackground(): Promise<boolean> {
+  return new Promise((done) => {
+    let buf = "";
+    const finish = (light: boolean) => {
+      clearTimeout(timer);
+      process.stdin.off("data", onData);
+      done(light);
+    };
+    const onData = (chunk: string) => {
+      buf += chunk;
+      const m = /\x1b\]11;rgb:([0-9a-f]+)\/([0-9a-f]+)\/([0-9a-f]+)/i.exec(buf);
+      if (!m) return;
+      const [r, g, b] = m.slice(1, 4).map((h) => parseInt(h.slice(0, 2), 16));
+      finish(0.2126 * r! + 0.7152 * g! + 0.0722 * b! > 128);
+    };
+    const timer = setTimeout(() => finish(false), 120);
+    process.stdin.on("data", onData);
+    process.stdout.write("\x1b]11;?\x07");
+  });
+}
+
+async function main(): Promise<void> {
   const store = Store.load();
   store.closeStaleWindows();
 
@@ -204,10 +230,12 @@ function main(): void {
     out.write("\x1b[?25h\x1b[?1049l"); // show cursor, leave alternate screen
   };
 
-  out.write("\x1b[?1049h\x1b[?25l\x1b[2J"); // alternate screen, hide cursor, clear
   process.stdin.setRawMode(true);
   process.stdin.resume();
   process.stdin.setEncoding("utf8");
+  setTheme(await detectLightBackground());
+
+  out.write("\x1b[?1049h\x1b[?25l\x1b[2J"); // alternate screen, hide cursor, clear
   draw();
 
   const quit = () => {

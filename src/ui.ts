@@ -3,14 +3,44 @@ import { basename } from "node:path";
 
 type RGB = readonly [number, number, number];
 
-const INK: RGB = [10, 12, 19];
-const SURFACE: RGB = [18, 21, 32];
-const TEXT: RGB = [232, 234, 242];
-const MUTED: RGB = [126, 139, 164];
-const VIOLET: RGB = [174, 143, 255];
-const MINT: RGB = [115, 218, 176];
-const CORAL: RGB = [255, 123, 125];
-const SELECTED: RGB = [35, 31, 53];
+interface Palette {
+  INK: RGB;
+  SURFACE: RGB;
+  TEXT: RGB;
+  MUTED: RGB;
+  MAROON: RGB;
+  MINT: RGB;
+  CORAL: RGB;
+  SELECTED: RGB;
+}
+
+const DARK: Palette = {
+  INK: [10, 12, 19],
+  SURFACE: [18, 21, 32],
+  TEXT: [232, 234, 242],
+  MUTED: [126, 139, 164],
+  MAROON: [198, 96, 88],
+  MINT: [115, 218, 176],
+  CORAL: [255, 123, 125],
+  SELECTED: [35, 31, 53],
+};
+
+/** Solarized Light, as Zed paints it. */
+const LIGHT: Palette = {
+  INK: [253, 246, 227],
+  SURFACE: [232, 224, 202],
+  TEXT: [88, 110, 117],
+  MUTED: [147, 161, 161],
+  MAROON: [138, 50, 44],
+  MINT: [133, 153, 0],
+  CORAL: [220, 50, 47],
+  SELECTED: [238, 232, 213],
+};
+
+let T: Palette = DARK;
+export const setTheme = (light: boolean) => {
+  T = light ? LIGHT : DARK;
+};
 
 interface Style {
   fg?: RGB;
@@ -40,9 +70,9 @@ function ansi(style: Style = {}): string {
 }
 
 const seg = (text: string, style?: Style): Seg => ({ text, style });
-const key = (text: string) => seg(text, { fg: VIOLET, bold: true });
-const keyDanger = (text: string) => seg(text, { fg: CORAL, bold: true });
-const label = (text: string) => seg(text, { fg: MUTED });
+const key = (text: string) => seg(text, { fg: T.MAROON, bold: true });
+const keyDanger = (text: string) => seg(text, { fg: T.CORAL, bold: true });
+const label = (text: string) => seg(text, { fg: T.MUTED });
 
 /** Visible columns [start, end) of a line, keeping styles. */
 function sliceLine(line: Line, start: number, end: number): Line {
@@ -80,7 +110,7 @@ function box(width: number, style: Style): Line {
 }
 
 function border(width: number, ch: string, style: Style): Line {
-  return [seg(ch.repeat(Math.max(width, 0)), { bg: INK, ...style })];
+  return [seg(ch.repeat(Math.max(width, 0)), { bg: T.INK, ...style })];
 }
 
 // ---------------------------------------------------------------- screen ----
@@ -94,12 +124,12 @@ export function render(app: App, width: number, height: number): string[] {
   const content =
     app.mode === "EditNotes" ? drawNote(app, w, h) : drawIndex(app, w, h);
 
-  const blank = () => box(width, { bg: INK });
+  const blank = () => box(width, { bg: T.INK });
   const screen: Line[] = [];
   for (let i = 0; i < height; i++) screen.push(blank());
   content.forEach((line, i) => {
     const row = margin + i;
-    if (row < height) screen[row] = overlay(screen[row]!, x, pad(line, w, { bg: INK }));
+    if (row < height) screen[row] = overlay(screen[row]!, x, pad(line, w, { bg: T.INK }));
   });
 
   const area = { x, y: margin, w, h };
@@ -107,7 +137,7 @@ export function render(app: App, width: number, height: number): string[] {
   if (app.mode === "EditTitle") textPrompt(screen, area, "rename task", app.input);
   if (app.mode === "ConfirmDelete") deletePrompt(screen, area, app);
 
-  return screen.map((line) => toAnsi(pad(line, width, { bg: INK })));
+  return screen.map((line) => toAnsi(pad(line, width, { bg: T.INK })));
 }
 
 // ----------------------------------------------------------------- index ----
@@ -121,20 +151,20 @@ function drawIndex(app: App, w: number, h: number): Line[] {
   const bodyH = Math.max(h - 3 - footerH, 0);
 
   const lines: Line[] = [
-    [seg("twodo", { fg: VIOLET, bold: true }), seg(`  /  ${project}`, { fg: MUTED })],
+    [seg("twodo", { fg: T.MAROON, bold: true }), seg(`  /  ${project}`, { fg: T.MUTED })],
     [
-      seg(`${open} open`, { fg: TEXT }),
-      seg("  ·  ", { fg: MUTED }),
-      seg(`${done} done`, { fg: MINT }),
+      seg(`${open} open`, { fg: T.TEXT }),
+      seg("  ·  ", { fg: T.MUTED }),
+      seg(`${done} done`, { fg: T.MINT }),
     ],
-    border(w, "─", { fg: SURFACE }),
+    border(w, "─", { fg: T.SURFACE }),
   ];
 
   if (visible.length === 0) {
     lines.push(
       [],
-      [seg("▌ ", { fg: VIOLET }), seg("No tasks yet.", { fg: TEXT })],
-      [seg("  Press ", { fg: MUTED }), key("n"), seg(" to add one.", { fg: MUTED })],
+      [seg("▌ ", { fg: T.MAROON }), seg("No tasks yet.", { fg: T.TEXT })],
+      [seg("  Press ", { fg: T.MUTED }), key("n"), seg(" to add one.", { fg: T.MUTED })],
     );
   } else {
     const offset = Math.max(0, Math.min(app.sel - bodyH + 1, visible.length - bodyH));
@@ -143,15 +173,15 @@ function drawIndex(app: App, w: number, h: number): Line[] {
       const task = app.store.tasks[visible[row]!]!;
       const selected = row === app.sel;
       const [mark, markColor] =
-        task.status === "Done" ? ["✓", MINT] : ["○", MUTED];
+        task.status === "Done" ? ["✓", T.MINT] : ["○", T.MUTED];
       const titleStyle: Style =
-        task.status === "Done" ? { fg: MUTED, strike: true } : { fg: TEXT };
-      const fill: Style = selected ? { bg: SELECTED, bold: true } : { bg: INK };
+        task.status === "Done" ? { fg: T.MUTED, strike: true } : { fg: T.TEXT };
+      const fill: Style = selected ? { bg: T.SELECTED, bold: true } : { bg: T.INK };
       lines.push(
         pad(
           [
-            seg(selected ? "▌ " : "  ", { fg: VIOLET, ...fill }),
-            seg(`${String(row + 1).padStart(3)}  `, { fg: MUTED, ...fill }),
+            seg(selected ? "▌ " : "  ", { fg: T.MAROON, ...fill }),
+            seg(`${String(row + 1).padStart(3)}  `, { fg: T.MUTED, ...fill }),
             seg(`${mark}  `, { fg: markColor as RGB, ...fill }),
             seg(task.title, { ...titleStyle, ...fill }),
           ],
@@ -193,7 +223,7 @@ function indexFooter(w: number, footerH: number): Line[] {
             key("q"), label(" quit"),
           ],
         ];
-  return [border(w, "─", { fg: SURFACE }), ...rows].slice(0, footerH);
+  return [border(w, "─", { fg: T.SURFACE }), ...rows].slice(0, footerH);
 }
 
 // ------------------------------------------------------------------ note ----
@@ -207,21 +237,21 @@ function drawNote(app: App, w: number, h: number): Line[] {
   const cursor = Math.max(0, Math.min(app.notesCursor, task.notes.length));
 
   const lines: Line[] = [
-    [seg("twodo", { fg: VIOLET, bold: true }), seg("  note", { fg: MUTED })],
-    [seg(task.title, { fg: TEXT, bold: true })],
-    border(w, "─", { fg: SURFACE }),
+    [seg("twodo", { fg: T.MAROON, bold: true }), seg("  note", { fg: T.MUTED })],
+    [seg(task.title, { fg: T.TEXT, bold: true })],
+    border(w, "─", { fg: T.SURFACE }),
   ];
 
   const body = noteBody(task.notes, cursor, w - 1, bodyH);
   for (let row = 0; row < bodyH; row++) {
-    lines.push([seg("│", { fg: VIOLET }), ...(body[row] ?? [])]);
+    lines.push([seg("│", { fg: T.MAROON }), ...(body[row] ?? [])]);
   }
 
   const footer: Line =
     w >= 48
       ? [key("esc"), label(" save & back   "), key("tab"), label(" indent")]
       : [key("esc"), label(" save   "), key("tab"), label(" indent")];
-  return [...lines, border(w, "─", { fg: SURFACE }), footer].slice(0, h);
+  return [...lines, border(w, "─", { fg: T.SURFACE }), footer].slice(0, h);
 }
 
 /** Wraps the note, places the cursor bar, and scrolls to keep it in view. */
@@ -230,8 +260,8 @@ function noteBody(note: string, cursor: number, width: number, viewport: number)
     return [
       [
         seg("  "),
-        seg("▏", { fg: VIOLET, bold: true }),
-        seg(" Write anything.", { fg: MUTED }),
+        seg("▏", { fg: T.MAROON, bold: true }),
+        seg(" Write anything.", { fg: T.MUTED }),
       ],
     ];
   }
@@ -251,12 +281,12 @@ function noteBody(note: string, cursor: number, width: number, viewport: number)
         cursorAt = rows.length;
         const at = cursorCol - start;
         rows.push([
-          seg(chunk.slice(0, at).join(""), { fg: TEXT }),
-          seg("▏", { fg: VIOLET, bold: true }),
-          seg(chunk.slice(at).join(""), { fg: TEXT }),
+          seg(chunk.slice(0, at).join(""), { fg: T.TEXT }),
+          seg("▏", { fg: T.MAROON, bold: true }),
+          seg(chunk.slice(at).join(""), { fg: T.TEXT }),
         ]);
       } else {
-        rows.push([seg(chunk.join(""), { fg: TEXT })]);
+        rows.push([seg(chunk.join(""), { fg: T.TEXT })]);
       }
     }
   });
@@ -294,8 +324,8 @@ function drawBox(
   body: Line[],
   hint: Line,
 ): void {
-  const style: Style = { bg: SURFACE };
-  const edge: Style = { fg: frame, bg: SURFACE };
+  const style: Style = { bg: T.SURFACE };
+  const edge: Style = { fg: frame, bg: T.SURFACE };
   const inner = at.w - 2;
 
   /** Title bar: rule with `text` laid over it, left-aligned or centred. */
@@ -318,16 +348,16 @@ function drawBox(
 }
 
 const onSurface = (line: Line): Line =>
-  line.map((s) => seg(s.text, { ...s.style, bg: SURFACE }));
+  line.map((s) => seg(s.text, { ...s.style, bg: T.SURFACE }));
 
 function textPrompt(screen: Line[], area: Area, title: string, input: string): void {
   const at = centered(area, 56, 5);
   drawBox(
     screen,
     at,
-    VIOLET,
-    [seg(` ${title} `, { fg: TEXT, bold: true, bg: SURFACE })],
-    [[seg(input, { fg: TEXT, bg: SURFACE }), seg("▏", { fg: VIOLET, bold: true, bg: SURFACE })]],
+    T.MAROON,
+    [seg(` ${title} `, { fg: T.TEXT, bold: true, bg: T.SURFACE })],
+    [[seg(input, { fg: T.TEXT, bg: T.SURFACE }), seg("▏", { fg: T.MAROON, bold: true, bg: T.SURFACE })]],
     onSurface([key("enter"), label(" save  "), key("esc"), label(" cancel")]),
   );
 }
@@ -339,11 +369,11 @@ function deletePrompt(screen: Line[], area: Area, app: App): void {
   drawBox(
     screen,
     at,
-    CORAL,
-    [seg(" delete ", { fg: CORAL, bold: true, bg: SURFACE })],
+    T.CORAL,
+    [seg(" delete ", { fg: T.CORAL, bold: true, bg: T.SURFACE })],
     [
-      [seg("Delete this task?", { fg: TEXT, bold: true, bg: SURFACE })],
-      [seg(title, { fg: MUTED, bg: SURFACE })],
+      [seg("Delete this task?", { fg: T.TEXT, bold: true, bg: T.SURFACE })],
+      [seg(title, { fg: T.MUTED, bg: T.SURFACE })],
     ],
     onSurface([keyDanger("d"), label(" confirm  "), key("esc"), label(" cancel")]),
   );
