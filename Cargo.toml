@@ -1,6 +1,6 @@
 [package]
 name = "twodo"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 description = "A quiet terminal todo list with one note per task"
 license = "MIT"

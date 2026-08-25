@@ -7,26 +7,44 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    runs-on: ubuntu-latest
+  build:
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-14
+          - target: x86_64-apple-darwin
+            os: macos-14
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - run: rustup target add ${{ matrix.target }}
+      - run: cargo build --release --target ${{ matrix.target }}
+      - name: Package
+        run: tar -czf "twodo-${{ matrix.target }}.tar.gz" -C "target/${{ matrix.target }}/release" twodo
+      - uses: actions/upload-artifact@v4
+        with:
+          name: twodo-${{ matrix.target }}
+          path: twodo-${{ matrix.target }}.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
 
       - name: Create GitHub release
-        run: gh release create "$GITHUB_REF_NAME" --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --generate-notes dist/*.tar.gz
         env:
           GH_TOKEN: ${{ github.token }}
-
-      - name: Compute source tarball sha256
-        id: src
-        shell: bash
-        run: |
-          set -euo pipefail
-          url="https://github.com/${{ github.repository }}/archive/refs/tags/${GITHUB_REF_NAME}.tar.gz"
-          curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors -o src.tgz "$url"
-          [ -s src.tgz ]
-          echo "url=$url" >> "$GITHUB_OUTPUT"
-          echo "sha=$(sha256sum src.tgz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
       - name: Check out the tap
         uses: actions/checkout@v4
@@ -35,16 +53,56 @@ jobs:
           ssh-key: ${{ secrets.TAP_DEPLOY_KEY }}
           path: tap
 
-      - name: Bump the formula
+      - name: Write the formula
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}"
+          sha() { sha256sum "dist/twodo-$1.tar.gz" | cut -d' ' -f1; }
+
+          cat > tap/Formula/twodo.rb <<EOF
+          class Twodo < Formula
+            desc "Quiet terminal todo list with one note per task"
+            homepage "https://github.com/${GITHUB_REPOSITORY}"
+            version "${version}"
+            license "MIT"
+
+            on_macos do
+              on_arm do
+                url "${base}/twodo-aarch64-apple-darwin.tar.gz"
+                sha256 "$(sha aarch64-apple-darwin)"
+              end
+              on_intel do
+                url "${base}/twodo-x86_64-apple-darwin.tar.gz"
+                sha256 "$(sha x86_64-apple-darwin)"
+              end
+            end
+
+            on_linux do
+              on_intel do
+                url "${base}/twodo-x86_64-unknown-linux-musl.tar.gz"
+                sha256 "$(sha x86_64-unknown-linux-musl)"
+              end
+            end
+
+            def install
+              bin.install "twodo"
+            end
+
+            test do
+              assert_path_exists bin/"twodo"
+            end
+          end
+          EOF
+
+          grep -c sha256 tap/Formula/twodo.rb | grep -qx 3
+
+      - name: Push the formula
         working-directory: tap
         shell: bash
         run: |
           set -euo pipefail
-          sed -i -E \
-            -e 's|^  url ".*"|  url "${{ steps.src.outputs.url }}"|' \
-            -e 's|^  sha256 ".*"|  sha256 "${{ steps.src.outputs.sha }}"|' \
-            Formula/twodo.rb
-          grep -q "${{ steps.src.outputs.sha }}" Formula/twodo.rb
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -am "twodo $GITHUB_REF_NAME"
