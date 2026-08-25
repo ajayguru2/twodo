@@ -19,11 +19,14 @@ jobs:
 
       - name: Compute source tarball sha256
         id: src
+        shell: bash
         run: |
+          set -euo pipefail
           url="https://github.com/${{ github.repository }}/archive/refs/tags/${GITHUB_REF_NAME}.tar.gz"
-          sha=$(curl -fsSL "$url" | sha256sum | cut -d' ' -f1)
+          curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors -o src.tgz "$url"
+          [ -s src.tgz ]
           echo "url=$url" >> "$GITHUB_OUTPUT"
-          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "sha=$(sha256sum src.tgz | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
       - name: Check out the tap
         uses: actions/checkout@v4
@@ -34,11 +37,14 @@ jobs:
 
       - name: Bump the formula
         working-directory: tap
+        shell: bash
         run: |
+          set -euo pipefail
           sed -i -E \
             -e 's|^  url ".*"|  url "${{ steps.src.outputs.url }}"|' \
             -e 's|^  sha256 ".*"|  sha256 "${{ steps.src.outputs.sha }}"|' \
             Formula/twodo.rb
+          grep -q "${{ steps.src.outputs.sha }}" Formula/twodo.rb
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -am "twodo $GITHUB_REF_NAME"
